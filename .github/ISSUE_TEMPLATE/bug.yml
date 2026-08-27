@@ -1,0 +1,51 @@
+name: Bug report
+description: Report reproducible behavior using synthetic data only.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping. Never attach a real secret, private screenshot, personal document, or identifying metadata. Reproduce with synthetic values.
+
+  - type: checkboxes
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I used only synthetic or public test data.
+          required: true
+        - label: This is not an undisclosed security vulnerability.
+          required: true
+
+  - type: dropdown
+    attributes:
+      label: Pipeline stage
+      options:
+        - Input / decoding
+        - Detection
+        - Review / manual redaction
+        - Sanitization
+        - Verification
+        - Receipt
+        - Build / development
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Include expected behavior and exact reproduction steps.
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Browser and operating system
+      placeholder: Firefox 154 on Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Synthetic fixture
+      description: Provide a minimal synthetic value or link to a public fixture.

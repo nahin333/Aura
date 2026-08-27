@@ -1,0 +1,41 @@
+name: Feature proposal
+description: Propose a measurable capability or contribution surface.
+title: "[Proposal]: "
+labels: ["proposal"]
+body:
+  - type: textarea
+    attributes:
+      label: Recent user problem
+      description: Describe the last concrete incident or workaround, not a generic feature wish.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Proposed contract
+      description: What will Aura inspect, let the user approve, sanitize destructively, and verify?
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Verification method
+      description: Explain how exported bytes will be decoded and tested. Visual overlays are not redaction.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Synthetic fixtures and failure cases
+      description: List positive, negative, adversarial, and unsupported cases.
+    validations:
+      required: true
+
+  - type: checkboxes
+    attributes:
+      label: Safety
+      options:
+        - label: The proposal does not require real secrets or private artifacts in issues/tests.
+          required: true
+        - label: Parser/check failures cannot produce a passed state.
+          required: true

@@ -1,6 +1,6 @@
 # Aura product discovery
 
-Status: proposed direction, awaiting approval
+Status: direction approved; Phase-0 browser prototype implemented locally
 Research snapshot: 2026-08-26
 
 ## Decision
@@ -13,12 +13,15 @@ This is not a generic screenshot editor, PDF toolbox, metadata remover, or AI wr
 
 1. Inspect visible and hidden data.
 2. Explain each finding without exposing it again.
-3. Let the user approve every removal.
+3. Let the user choose visible-content removals; supported hidden metadata is
+   always stripped from image exports.
 4. Sanitize into a new, flattened artifact.
 5. Decode and scan the exported bytes again.
 6. Report what was verified and what cannot be verified.
 
-The working name is **Aura Preflight**, but the public product must be renamed. “Aura” is already heavily used by a large digital-security company, an Arch Linux package manager, and multiple active developer products.
+The working name is **Aura Preflight**. It should be revisited before a stable
+release because “Aura” is already heavily used by a large digital-security
+company, an Arch Linux package manager, and multiple active developer products.
 
 ## Why this direction
 
@@ -29,7 +32,10 @@ The working name is **Aura Preflight**, but the public product must be renamed. 
 - Detector rules, adapters, translations, and adversarial fixtures create real contribution and fork surfaces.
 - A narrow image-first release is useful while leaving a path to documents, logs, URLs, archives, and recordings.
 
-The novelty is not OCR or redaction. The opening is a polished, trustworthy **inspect -> review -> sanitize -> verify** contract across visible and invisible leakage.
+The novelty hypothesis is not OCR or redaction. The proposed opening is a
+polished, transparent **inspect -> review -> sanitize -> verify** contract
+across visible and invisible leakage. Hands-on competitor testing and user
+interviews are still required to validate that opening.
 
 ## Competitive reality
 
@@ -47,11 +53,16 @@ The novelty is not OCR or redaction. The opening is a polished, trustworthy **in
 | [Gitleaks](https://github.com/gitleaks/gitleaks) | Mature secret detection | No end-user visual sharing flow |
 | [Presidio](https://github.com/microsoft/presidio) | Mature PII SDKs | Detection primitives rather than the consumer workflow |
 
-Conclusion: auto-redaction alone is not defensible. Post-sanitization verification, honest guarantees, cross-format architecture, and a very fast share workflow can be.
+Working hypothesis: auto-redaction alone is not defensible. Post-sanitization
+verification, exact check language, cross-format architecture, and a very fast
+share workflow may provide a defensible product if the validation gate below is met.
 
 ## Ranked alternatives
 
-The 100-point gate weights repeated pain, demo clarity, open-source advantage, whitespace, first-value speed, MVP feasibility, contribution surface, and reachable communities.
+This preliminary 100-point screen weights repeated pain, demo clarity,
+open-source advantage, whitespace, first-value speed, MVP feasibility,
+contribution surface, and reachable communities. Scores are prioritization
+hypotheses, not market validation; interviews and hands-on tests remain open.
 
 | Direction | Score | Decision |
 | --- | ---: | --- |
@@ -63,7 +74,7 @@ The 100-point gate weights repeated pain, demo clarity, open-source advantage, w
 | Forgotten-account/subscription sweep | Rejected | Paperweight and Aura Digital Security offer similar discovery flows |
 | Generic agent recorder, notes, PDF, transfer, or local chat app | Rejected | Mature or rapidly crowding categories |
 
-## Version 0.1 contract
+## Target alpha contract
 
 ### Target user
 
@@ -72,25 +83,29 @@ A developer, support worker, founder, teacher, recruiter, journalist, or privacy
 ### Golden flow
 
 1. Paste a screenshot/text or drop PNG, JPEG, or WebP.
-2. See local findings grouped as visible text, secret, barcode/QR, and hidden metadata.
-3. Include/exclude findings and add manual solid-redaction boxes.
-4. Select **Create verified copy**.
-5. Copy/save the new artifact and review a concise verification receipt.
+2. See local findings grouped as visible text, secret, QR, and hidden metadata.
+3. Include/exclude visible findings, add manual solid-redaction boxes, and see
+   that supported hidden metadata removal is mandatory.
+4. Select **Create checked copy**.
+5. Copy/save the new artifact and review a concise diagnostic receipt.
 
 Target: median under 45 seconds, excluding the user's review time.
 
 ### Included
 
 - Image and plain-text clipboard input.
-- OCR bounding boxes for languages proven by the fixture corpus.
-- Deterministic email, phone, common credential/token, sensitive URL parameter, and user-supplied-term detectors.
-- QR/common barcode detection.
-- EXIF, GPS, IPTC, and XMP inspection.
+- English OCR bounding boxes.
+- Deterministic email, phone, IP, common credential/token, sensitive URL
+  parameter, and Luhn-valid payment-card detectors.
+- QR-code detection.
+- EXIF, GPS, IPTC, XMP, PNG text, ICC, and Photoshop inspection.
 - Manual solid redaction.
-- Newly encoded, flattened image output with metadata removed.
-- Fresh output scan for OCR, configured patterns, barcodes, and supported metadata.
-- Privacy-safe JSON receipt with hashes, detector versions, categories, counts, and checks—never raw sensitive values.
-- No network requests in the core flow.
+- Newly encoded, flattened PNG output with supported metadata groups absent.
+- Fresh output scan for OCR, configured patterns, QR, and supported metadata.
+- Raw-value-excluding, unsigned diagnostic JSON receipt with an output SHA-256
+  fingerprint, engine versions, aggregate categories/counts, and checks.
+- No external requests or artifact uploads in the application flow; packaged
+  runtime assets load from the same origin.
 
 Face detection is a measured spike, not a launch promise.
 
@@ -99,7 +114,7 @@ Face detection is a measured spike, not a launch promise.
 - PDF/Office redaction until destructive, format-specific tests exist.
 - Video/audio, background clipboard surveillance, automatic sending/uploading, cloud AI, and required local LLMs.
 - Compliance certification or a universal “safe” claim.
-- Blur/pixelation as security controls; version 0.1 uses destructive solid replacement.
+- Blur/pixelation as security controls; the target alpha uses destructive solid replacement.
 
 ## Trust rules
 
@@ -110,7 +125,8 @@ The interface must say what was checked, not “nothing sensitive remains.”
 - Selected values never appear raw in logs, diagnostics, filenames, or receipts.
 - Verification runs on exported bytes, not the pre-export canvas.
 - A verification error never produces a green state.
-- Findings show category, location, masked preview, confidence, and detector source.
+- Findings show category, location where available, masked preview, detector
+  source, and confidence where meaningful.
 - Unsupported formats fail closed with a useful explanation.
 
 ## Proposed architecture
@@ -128,7 +144,8 @@ fixtures/public       synthetic/licensed adversarial samples
 - Strict pipeline: ingest -> detect -> review -> sanitize -> decode output -> verify.
 - No backend in the first release.
 
-OCR/barcode dependencies require a benchmark covering recall, bounding-box quality, binary/model size, cold start, language coverage, license, and packaging.
+OCR/QR dependencies require a benchmark covering recall, bounding-box quality,
+binary/model size, cold start, language coverage, license, and packaging.
 
 ## Validation gate
 
@@ -140,17 +157,25 @@ Build only a thin golden-flow prototype first. Continue when:
 - At least 60% complete the flow unaided; median time is below 45 seconds.
 - At least 30% of relevant testers repeat within seven days.
 - Supported metadata removal passes 100% of the public fixtures.
-- Every selected deterministic token is absent from output bytes, decoded metadata, OCR, and barcode results in supported fixtures.
+- Every selected deterministic token is absent from output bytes, decoded
+  metadata, OCR, and QR results in supported fixtures.
 - OCR recall/false-positive results are published per fixture class.
 
 Kill or re-scope if fewer than five users trust it with their own artifact, review is slower than manual redaction, or the verification boundary cannot be explained in one sentence.
 
 ## Delivery sequence
 
-1. **Phase 0:** synthetic leak fixtures, disposable golden-flow prototype, OCR/barcode benchmark, competitor testing, and interviews.
-2. **Private alpha:** Rust pipeline, desktop review surface, threat model, fixture corpus, 30–50 testers.
-3. **Public beta:** reproducible cross-platform builds, CLI/library docs, sample mode, README demo, contribution schema, translations, and real starter issues.
-4. **Launch:** seed real users, then stagger Hacker News, relevant communities, Product Hunt, newsletters, and creator outreach; ship weekly visual releases for the first month.
+1. **Phase 0:** synthetic golden-flow browser prototype, local scanners, threat
+   model, post-export checks, and automated smoke paths.
+2. **Alpha validation:** public adversarial corpus, OCR/QR benchmark, five
+   hands-on competitor tests, and twenty recent-problem interviews.
+3. **Private alpha:** core/CLI extraction decision, desktop review surface,
+   reproducible packaging, and 30–50 testers.
+4. **Public beta:** CLI/library docs, sample mode, contribution schema,
+   translations, and real starter issues.
+5. **Launch:** seed real users, then stagger Hacker News, relevant communities,
+   Product Hunt, newsletters, and creator outreach; ship weekly visual releases
+   for the first month.
 
 ## Success measures
 
@@ -158,6 +183,14 @@ Track completed verified copies, first-value time, seven-day repeat use, release
 
 A literal 1,000-fork target normally implies far more than 1,000 stars. The reusable core, CLI, rule packs, and fixtures are necessary if forks are a real objective.
 
-## Approval needed
+## Implementation status
 
-Approve or reject this product direction before production scaffolding. On approval, the next deliverable is the Phase 0 prototype and dependency benchmark—not a broad feature build.
+The direction was approved and a working Phase-0 vertical slice now lives in
+this repository. It includes the synthetic golden-flow demo, real pasted-text
+rules, local image OCR, QR and supported metadata inspection, manual
+solid redaction, fresh PNG encoding, post-export checks, and raw-value-excluding
+diagnostic receipts.
+
+The prototype is deliberately narrower than the target alpha contract.
+PDF/Office support, a native desktop wrapper, multilingual OCR, adversarial
+fixture coverage, and stable release packaging remain gated work.
