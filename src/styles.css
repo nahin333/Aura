@@ -405,6 +405,24 @@ input:focus-visible {
   gap: 6px;
 }
 
+.validation-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 7px;
+  margin-top: 15px;
+  color: #3f6655;
+  font-size: 11px;
+  font-weight: 750;
+  text-decoration-color: rgb(63 102 85 / 42%);
+  text-underline-offset: 3px;
+}
+
+.validation-link:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
 .input-card {
   align-self: center;
   padding: 20px;
@@ -1902,6 +1920,12 @@ input:focus-visible {
 
 .check-another {
   margin-top: auto;
+}
+
+.result-feedback {
+  justify-content: center;
+  margin-top: 8px;
+  text-align: center;
 }
 
 .error-icon {

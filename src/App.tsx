@@ -19,6 +19,7 @@ import {
   LockKeyhole,
   Mail,
   MapPin,
+  MessageSquareText,
   MonitorDown,
   MousePointer2,
   Network,
@@ -1403,6 +1404,15 @@ function App() {
                 <Eye size={15} /> Review visible findings
               </span>
             </div>
+            <a
+              className="validation-link"
+              href="https://github.com/nahin333/Aura/issues/new?template=user-test.yml"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <MessageSquareText size={15} />
+              Help validate v0.2 — 3-minute feedback
+            </a>
           </section>
 
           <section className="input-card" aria-label="Start a privacy check">
@@ -2007,6 +2017,15 @@ function App() {
               <RotateCcw size={16} />
               Check another artifact
             </button>
+            <a
+              className="validation-link result-feedback"
+              href="https://github.com/nahin333/Aura/issues/new?template=user-test.yml"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <MessageSquareText size={14} />
+              Tell us where this flow helped or failed
+            </a>
           </aside>
         </main>
       )}

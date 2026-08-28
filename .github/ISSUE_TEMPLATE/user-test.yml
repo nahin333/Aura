@@ -1,0 +1,125 @@
+name: Alpha user test
+description: Report one real workflow outcome without sharing the artifact itself.
+title: "[User test]: "
+labels: ["validation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing Aura Preflight. This form is public. Never attach or paste the artifact, receipt, detected values, filenames, screenshots, secrets, personal data, or identifying metadata. Describe the kind of task only.
+
+  - type: checkboxes
+    id: privacy-confirmation
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I will not include the input, output, receipt, detected values, or identifying details in this issue.
+          required: true
+        - label: I used synthetic data or a non-critical artifact and reviewed the checked copy before sharing it anywhere.
+          required: true
+
+  - type: dropdown
+    id: test-path
+    attributes:
+      label: What did you test?
+      options:
+        - Pasted text, log, link, or message
+        - Screenshot or image
+        - Synthetic sample
+        - Receipt matcher
+        - Offline installation or use
+    validations:
+      required: true
+
+  - type: dropdown
+    id: problem-recency
+    attributes:
+      label: How recent was the sharing problem?
+      description: Think of the last time you had to inspect or redact something before sharing it.
+      options:
+        - Within the last 7 days
+        - Within the last 30 days
+        - Within the last 90 days
+        - More than 90 days ago
+        - I have not had this problem before
+    validations:
+      required: true
+
+  - type: textarea
+    id: task-context
+    attributes:
+      label: Task context
+      description: 'Describe the destination and goal, not the content. Example: "I was preparing a synthetic support screenshot for a public issue."'
+      placeholder: I needed to prepare a ... for ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options:
+        - Completed without help
+        - Completed, but I hesitated or needed help
+        - Could not complete the task
+        - Aura did not support my input or expected check
+    validations:
+      required: true
+
+  - type: dropdown
+    id: first-value-time
+    attributes:
+      label: Time to first checked copy
+      options:
+        - Under 30 seconds
+        - 30–44 seconds
+        - 45–89 seconds
+        - 90 seconds–3 minutes
+        - More than 3 minutes
+        - I did not create a checked copy
+    validations:
+      required: true
+
+  - type: textarea
+    id: friction
+    attributes:
+      label: Where did you hesitate or stop?
+      description: Name the screen, label, decision, or unsupported capability. Do not include detected content.
+    validations:
+      required: true
+
+  - type: textarea
+    id: trust-boundary
+    attributes:
+      label: What do you think Aura verified?
+      description: Explain the trust boundary in your own words. This tests whether the product's language is clear.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: repeat-intent
+    attributes:
+      label: Would you use it again in the next seven days?
+      options:
+        - Yes — I expect another relevant task
+        - Maybe — only for a particular kind of artifact
+        - No — the workflow is not useful enough yet
+        - No — I do not expect another relevant task
+    validations:
+      required: true
+
+  - type: textarea
+    id: highest-value-change
+    attributes:
+      label: One change with the highest value
+      description: Pick one change that would most improve this exact task.
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and operating system
+      placeholder: Firefox on Ubuntu; Safari on iOS; Chrome on Windows
+    validations:
+      required: true

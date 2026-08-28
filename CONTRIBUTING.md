@@ -11,6 +11,14 @@ The most valuable contributions improve a supported guarantee, add a synthetic a
 3. For a substantial new format, engine, or architecture change, open a proposal issue before implementation.
 4. Never attach real secrets, private screenshots, or identifying metadata. Reproduce with synthetic values on reserved/example domains.
 
+## Claiming scoped work
+
+Only issues labeled `help wanted` have maintainer-approved implementation
+scope. Before coding, comment with the files and tests you expect to change and
+wait for scope confirmation. Keep one issue per pull request.
+`good first issue` is reserved for work with no unresolved product,
+verification, or architecture decision.
+
 ## Local setup
 
 ~~~bash

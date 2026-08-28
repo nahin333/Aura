@@ -27,6 +27,9 @@ body:
         - Sanitization
         - Verification
         - Receipt
+        - Receipt matcher
+        - PWA / offline cache
+        - Copy / save / native share
         - Build / development
     validations:
       required: true

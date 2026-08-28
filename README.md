@@ -10,6 +10,8 @@
   <p>
     <a href="https://nahin333.github.io/Aura/"><strong>Open the live app</strong></a>
     ·
+    <a href="https://github.com/nahin333/Aura/issues/new?template=user-test.yml">Test the alpha</a>
+    ·
     <a href="docs/threat-model.md">Threat model</a>
     ·
     <a href="CONTRIBUTING.md">Contribute</a>
@@ -70,6 +72,20 @@ No account, API key, backend, or cloud model is required. OCR worker, WASM core,
 
 The hosted build is also installable. Offline use begins after one successful
 load finishes caching the application and its packaged OCR assets.
+
+## Help validate the alpha
+
+Aura does not use product analytics or upload artifacts, so useful feedback has
+to be deliberate. Try one recent, non-critical sharing task, do not attach the
+artifact or receipt, and report only the type of task and where the workflow
+helped or failed.
+
+[Run the 3-minute user test](https://github.com/nahin333/Aura/issues/new?template=user-test.yml)
+or use the [facilitated test script](docs/user-validation.md). The current gate
+is twenty recent-problem interviews, five tests with a participant's own
+non-critical artifact, at least 60% unaided completion, and a median first
+checked copy below 45 seconds. Those thresholds decide what gets built next;
+stars do not.
 
 ## What works today
 
@@ -222,6 +238,9 @@ The project is designed to create meaningful contribution surfaces rather than e
 - threat-model and verification tests.
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the [roadmap](docs/roadmap.md). Never attach a real secret or private artifact to an issue—use synthetic replacements.
+
+Maintainers can use the [launch and distribution playbook](docs/launch-playbook.md)
+for channel-specific positioning, assets, sequencing, and measurement.
 
 ## Product direction
 

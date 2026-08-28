@@ -174,7 +174,9 @@ binary/model size, cold start, language coverage, license, and packaging.
 Build only a thin golden-flow prototype first. Continue when:
 
 - 20 target users discuss their most recent incident/workaround, not whether they like the pitch.
-- At least 8 had the problem in the prior 90 days and 5 will test their own non-critical artifact.
+- At least 8 had the problem in the prior 90 days and 5 run Aura locally on
+  their own non-critical artifact; maintainers receive only outcome/timing, not
+  the artifact bytes.
 - Current builds of at least five direct competitors are tested hands-on.
 - At least 60% complete the flow unaided; median time is below 45 seconds.
 - At least 30% of relevant testers repeat within seven days.

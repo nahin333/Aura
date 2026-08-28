@@ -30,7 +30,9 @@ This roadmap is ordered by trust and repeatable user value, not feature count.
 - [ ] Public synthetic/adversarial image and metadata fixture corpus
 - [ ] OCR benchmark with recall, false positives, box quality, cold start, and binary size
 - [ ] Five hands-on competitor tests documented with current builds
-- [ ] Twenty recent-problem interviews and five non-critical user artifacts
+- [ ] Twenty recent-problem reports/interviews; five participants run Aura
+  locally on their own non-critical artifact and report only outcome/timing.
+  Maintainers do not receive artifact bytes.
 - [ ] Manual box resize plus accessible numeric geometry controls
 - [ ] Multiple QR results and safe 1-D barcode geometry
 - [ ] Receipt schema review and deterministic serialization
