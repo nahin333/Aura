@@ -44,6 +44,7 @@ export default defineConfig({
         },
         { src: "LICENSE", dest: "." },
         { src: "THIRD_PARTY_NOTICES.md", dest: "." },
+        { src: "docs/assets/verified.png", dest: "social" },
         { src: "node_modules/react/LICENSE", dest: "licenses/react" },
         { src: "node_modules/react-dom/LICENSE", dest: "licenses/react-dom" },
         { src: "node_modules/lucide-react/LICENSE", dest: "licenses/lucide-react" },

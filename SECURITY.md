@@ -24,4 +24,8 @@ Do not open a public issue before a fix is available. Do not attach real secrets
 
 ## Prototype support
 
-The current supported line is the latest commit on <code>main</code>. This is a Phase-0 prototype and has not received an independent security audit. Do not use it as the sole control for high-risk or regulated disclosures.
+The current supported line is the latest commit on <code>main</code>. Version
+0.2 is a prototype and has not received an independent security audit. Do not
+use it as the sole control for high-risk or regulated disclosures. Diagnostic
+receipts are unsigned, and matching one to an artifact is not proof of
+authenticity or safety.

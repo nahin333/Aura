@@ -3,13 +3,17 @@ import {
   type Line,
   type Worker,
 } from "tesseract.js";
-import { detectText, type Finding } from "../../packages/core/src";
+import {
+  detectText,
+  type Finding,
+  type TextDetector,
+} from "../../packages/core/src";
 import type { NormalizedRect } from "../types";
 import {
   normalizeOcrText,
   sourceRangeForNormalizedRange,
 } from "./ocr-normalize";
-import { sha256 } from "./privacy";
+import { findingValueHash } from "./privacy";
 
 export interface OcrFinding {
   finding: Finding;
@@ -131,6 +135,7 @@ export async function scanOcr(
   imageWidth: number,
   imageHeight: number,
   onProgress?: (progress: OcrProgress) => void,
+  detectors?: readonly TextDetector[],
 ): Promise<OcrScan> {
   try {
     const worker = await getWorker(onProgress);
@@ -144,7 +149,7 @@ export async function scanOcr(
 
     for (const line of lines) {
       const normalized = normalizeOcrText(line.text);
-      for (const finding of detectText(normalized.text)) {
+      for (const finding of detectText(normalized.text, { detectors })) {
         const sourceRange = sourceRangeForNormalizedRange(
           normalized,
           finding.start,
@@ -162,7 +167,10 @@ export async function scanOcr(
         findings.push({
           finding: sourceFinding,
           box: matchedBox(line, sourceFinding, imageWidth, imageHeight),
-          valueHash: await sha256(canonicalValue),
+          valueHash: await findingValueHash(
+            canonicalValue,
+            finding.detectorId,
+          ),
           engineConfidence: Math.max(0, Math.min(100, line.confidence)),
         });
       }

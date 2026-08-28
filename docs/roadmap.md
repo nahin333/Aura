@@ -15,6 +15,16 @@ This roadmap is ordered by trust and repeatable user value, not feature count.
 - [x] Unit, build, and Firefox smoke validation
 - [x] Honest limitations and threat model
 
+## 0.2 — personal, portable, verifiable
+
+- [x] Session-only protected literal phrases with input/output detector parity
+- [x] Stable typed text aliases with collision-safe fallback
+- [x] Text/PNG receipt-to-artifact byte matching
+- [x] Installable offline PWA with static-only cache policy
+- [x] Explicit native share-out for passed copies on supported platforms
+- [x] Truthful zero-finding image export and receipt behavior
+- [x] Expanded unit and production browser regression coverage
+
 ## Alpha gate
 
 - [ ] Public synthetic/adversarial image and metadata fixture corpus
@@ -24,6 +34,8 @@ This roadmap is ordered by trust and repeatable user value, not feature count.
 - [ ] Manual box resize plus accessible numeric geometry controls
 - [ ] Multiple QR results and safe 1-D barcode geometry
 - [ ] Receipt schema review and deterministic serialization
+- [ ] CLI plus GitHub Action using the same deterministic core and receipts
+- [ ] Signed or otherwise authenticated receipt design decision
 - [ ] Runtime network-denial test
 - [ ] Dependency notices and software bill of materials
 
@@ -52,5 +64,6 @@ This roadmap is ordered by trust and repeatable user value, not feature count.
 - video/audio
 - blur or pixelation as security controls
 - automatic sending/uploading
+- inbound operating-system share target until transient input deletion is proven
 - background clipboard surveillance
 - required cloud AI or local LLM

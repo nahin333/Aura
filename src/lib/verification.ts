@@ -89,7 +89,11 @@ export function buildImageChecks(input: ImageCheckInput): ImageCheckResult {
     },
     {
       id: "pixels.flattened",
-      label: "Selected visual regions flattened",
+      label:
+        input.visualRegionCount === 0 &&
+        input.everySelectedVisualFindingHasBox
+        ? "No visual redactions required"
+        : "Selected visual regions flattened",
       status:
         input.solid && input.everySelectedVisualFindingHasBox
           ? "passed"
@@ -98,7 +102,7 @@ export function buildImageChecks(input: ImageCheckInput): ImageCheckResult {
         ? "A selected visual finding had no usable redaction box."
         : input.visualRegionCount
           ? `${input.visualRegionCount} selected region${input.visualRegionCount === 1 ? "" : "s"} contain only solid replacement pixels`
-          : "No visual regions were selected.",
+          : "The review contained no supported or manual visual regions to flatten.",
     },
     {
       id: "metadata.absent",

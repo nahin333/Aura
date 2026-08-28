@@ -13,6 +13,8 @@ const SAFE_REPLACEMENTS = new Set([
   "removed",
   "***",
 ]);
+const SAFE_TYPED_ALIAS =
+  /^\[(?:EMAIL|PHONE|IP|LINK|TOKEN|CARD|PROTECTED)_[1-9]\d{0,5}\]$/i;
 
 const SENSITIVE_QUERY_KEYS = new Set([
   "access_key",
@@ -92,7 +94,11 @@ function decodedValue(value: string): string {
 }
 
 function isKnownSafeReplacement(value: string): boolean {
-  return SAFE_REPLACEMENTS.has(decodedValue(value).trim().toLowerCase());
+  const decoded = decodedValue(value).trim();
+  return (
+    SAFE_REPLACEMENTS.has(decoded.toLowerCase()) ||
+    SAFE_TYPED_ALIAS.test(decoded)
+  );
 }
 
 function normalizedQueryKey(key: string): string {

@@ -1,3 +1,7 @@
+import {
+  canonicalProtectedTermValue,
+  PROTECTED_TERM_DETECTOR_ID,
+} from "../../packages/core/src";
 import type { FindingKind, ReviewFinding } from "../types";
 
 export async function sha256(value: Blob | string): Promise<string> {
@@ -9,6 +13,22 @@ export async function sha256(value: Blob | string): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+export function canonicalFindingValue(
+  value: string,
+  detectorId: string,
+): string {
+  return detectorId === PROTECTED_TERM_DETECTOR_ID
+    ? canonicalProtectedTermValue(value)
+    : value;
+}
+
+export async function findingValueHash(
+  value: string,
+  detectorId: string,
+): Promise<string> {
+  return sha256(canonicalFindingValue(value, detectorId));
 }
 
 export function maskValue(value: string, kind: FindingKind): string {
@@ -35,6 +55,10 @@ export function maskValue(value: string, kind: FindingKind): string {
 
   if (kind === "payment") {
     return `•••• •••• •••• ${compact.replace(/\D/g, "").slice(-4)}`;
+  }
+
+  if (kind === "custom") {
+    return "••••••••";
   }
 
   if (compact.length <= 8) return "••••••••";

@@ -69,4 +69,12 @@ describe("built-in text detectors", () => {
     const findings = detectText("valid 10.20.30.40 invalid 999.20.30.40");
     expect(findings.filter((finding) => finding.category === "ip_address")).toHaveLength(1);
   });
+
+  it("does not re-detect Aura's typed output aliases as secrets", () => {
+    const findings = detectText(
+      'token="[TOKEN_1]" password=[PROTECTED_2] https://example.test/?code=[LINK_3]',
+    );
+
+    expect(findings).toEqual([]);
+  });
 });

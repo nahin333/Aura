@@ -1,7 +1,7 @@
 # Aura product discovery
 
-Status: direction approved; Phase-0 browser prototype implemented locally
-Research snapshot: 2026-08-26
+Status: direction approved; 0.2 browser product implemented and validated
+Research snapshot: 2026-08-28
 
 ## Decision
 
@@ -56,6 +56,28 @@ interviews are still required to validate that opening.
 Working hypothesis: auto-redaction alone is not defensible. Post-sanitization
 verification, exact check language, cross-format architecture, and a very fast
 share workflow may provide a defensible product if the validation gate below is met.
+
+### 0.2 competitive check
+
+The follow-up review treated client-side OCR, EXIF stripping, generic
+redaction, PWA installation, PDF support, face detection, and a CLI as crowded
+capabilities rather than a unique pitch. Several current tools already combine
+some of them. Aura 0.2 therefore concentrates on a narrower product loop:
+
+~~~text
+personal privacy lens
+  → explicit review
+  → destructive checked copy
+  → exported-byte verification
+  → later artifact/receipt matching
+~~~
+
+The session-only privacy lens and readable aliases improve repeated daily use.
+Receipt matching extends verification beyond the original browser session.
+Offline installation and native share-out reduce friction, but are distribution
+features—not the differentiation by themselves. PDF, face models, batch mode,
+and inbound share targeting remain deferred until their verification and
+transient-data boundaries are credible.
 
 ## Ranked alternatives
 
@@ -167,13 +189,16 @@ Kill or re-scope if fewer than five users trust it with their own artifact, revi
 
 1. **Phase 0:** synthetic golden-flow browser prototype, local scanners, threat
    model, post-export checks, and automated smoke paths.
-2. **Alpha validation:** public adversarial corpus, OCR/QR benchmark, five
+2. **0.2 utility release:** personal protected terms, typed aliases, receipt
+   matching, offline installation, explicit share-out, and truthful
+   zero-finding image export.
+3. **Alpha validation:** public adversarial corpus, OCR/QR benchmark, five
    hands-on competitor tests, and twenty recent-problem interviews.
-3. **Private alpha:** core/CLI extraction decision, desktop review surface,
+4. **Private alpha:** core/CLI extraction decision, desktop review surface,
    reproducible packaging, and 30–50 testers.
-4. **Public beta:** CLI/library docs, sample mode, contribution schema,
+5. **Public beta:** CLI/library docs, sample mode, contribution schema,
    translations, and real starter issues.
-5. **Launch:** seed real users, then stagger Hacker News, relevant communities,
+6. **Launch:** seed real users, then stagger Hacker News, relevant communities,
    Product Hunt, newsletters, and creator outreach; ship weekly visual releases
    for the first month.
 
@@ -185,11 +210,12 @@ A literal 1,000-fork target normally implies far more than 1,000 stars. The reus
 
 ## Implementation status
 
-The direction was approved and a working Phase-0 vertical slice now lives in
-this repository. It includes the synthetic golden-flow demo, real pasted-text
-rules, local image OCR, QR and supported metadata inspection, manual
-solid redaction, fresh PNG encoding, post-export checks, and raw-value-excluding
-diagnostic receipts.
+The direction was approved and the working 0.2 browser product now lives in
+this repository. In addition to the Phase-0 vertical slice, it includes
+session-only literal phrases, collision-safe typed aliases, artifact-to-receipt
+matching, an installable static-only offline build, supported native share-out,
+and a checked zero-finding image path. Unit and production Firefox coverage
+exercise the complete flow with synthetic fixtures.
 
 The prototype is deliberately narrower than the target alpha contract.
 PDF/Office support, a native desktop wrapper, multilingual OCR, adversarial

@@ -8,8 +8,10 @@ import {
   CreditCard,
   Download,
   Eye,
+  FileCheck2,
   FileJson,
   FileText,
+  Fingerprint,
   GitFork,
   Image as ImageIcon,
   KeyRound,
@@ -17,6 +19,7 @@ import {
   LockKeyhole,
   Mail,
   MapPin,
+  MonitorDown,
   MousePointer2,
   Network,
   Phone,
@@ -24,6 +27,7 @@ import {
   QrCode,
   RotateCcw,
   ScanLine,
+  Share2,
   ShieldAlert,
   Sparkles,
   Upload,
@@ -42,14 +46,23 @@ import {
   useState,
 } from "react";
 import {
+  BUILT_IN_TEXT_DETECTORS,
+  MAX_PROTECTED_TERMS,
   buildReceipt,
+  createProtectedTermDetector,
   detectText,
   redactText,
   summarizeFindings,
   verifyText,
   type Finding,
   type FindingCategory,
+  type TextDetector,
 } from "../packages/core/src";
+import { ReceiptMatcher } from "./components/ReceiptMatcher";
+import {
+  createInstallPromptController,
+  type InstallPromptController,
+} from "./lib/pwa";
 import {
   decodeImage,
   rasterizeImage,
@@ -64,9 +77,14 @@ import { scanOcr, terminateOcrWorker } from "./lib/ocr";
 import {
   countCategories,
   downloadBlob,
+  findingValueHash,
   outputFilename,
   receiptFilename,
 } from "./lib/privacy";
+import {
+  chooseOpaqueReplacement,
+  collisionSafeTypedAlias,
+} from "./lib/replacements";
 import { createSampleFile, sampleFindingSeeds } from "./lib/sample";
 import {
   buildImageChecks,
@@ -86,8 +104,11 @@ import type {
 
 const STAGES = ["Inspect", "Review", "Sanitize", "Verify"] as const;
 const TEXT_LIMIT = 250_000;
+const PROTECTED_TERMS_DRAFT_LIMIT = 4_000;
 
 type ScanStatus = "not-run" | "checked" | "error";
+type ReplacementMode = "opaque" | "aliases";
+type ToolMode = "preflight" | "receipt";
 
 interface ScanSummary {
   ocr: ScanStatus;
@@ -101,6 +122,63 @@ const EMPTY_SCANS: ScanSummary = {
   metadata: "not-run",
 };
 
+const ALIAS_PREFIX: Record<FindingCategory, string> = {
+  email_address: "EMAIL",
+  phone_number: "PHONE",
+  ip_address: "IP",
+  sensitive_url_parameter: "LINK",
+  authentication_token: "TOKEN",
+  payment_card: "CARD",
+  custom_sensitive: "PROTECTED",
+};
+
+function detectorSnapshotForDraft(draft: string): {
+  detectors: readonly TextDetector[];
+  protectedTermCount: number;
+} {
+  if (draft.length > PROTECTED_TERMS_DRAFT_LIMIT) {
+    throw new RangeError(
+      `Protected terms are limited to ${PROTECTED_TERMS_DRAFT_LIMIT.toLocaleString()} typed characters in total.`,
+    );
+  }
+  const protectedTerms = draft
+    .split(/\r\n?|\n/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  if (!protectedTerms.length) {
+    return {
+      detectors: BUILT_IN_TEXT_DETECTORS,
+      protectedTermCount: 0,
+    };
+  }
+  const protectedTermDetector = createProtectedTermDetector(protectedTerms);
+  return {
+    detectors: Object.freeze([
+      ...BUILT_IN_TEXT_DETECTORS,
+      protectedTermDetector,
+    ]),
+    protectedTermCount: protectedTerms.length,
+  };
+}
+
+function typedAliasMarkers(
+  selected: readonly (ReviewFinding & { textFinding: Finding })[],
+): readonly string[] {
+  const counters = new Map<string, number>();
+  const aliases = new Map<string, string>();
+  return selected.map((finding) => {
+    const prefix = ALIAS_PREFIX[finding.textFinding.category];
+    const identity = finding.valueHash ?? `${prefix}:${finding.id}`;
+    const existing = aliases.get(identity);
+    if (existing) return existing;
+    const next = (counters.get(prefix) ?? 0) + 1;
+    counters.set(prefix, next);
+    const alias = `[${prefix}_${next}]`;
+    aliases.set(identity, alias);
+    return alias;
+  });
+}
+
 function kindForCategory(category: FindingCategory): FindingKind {
   const kinds: Record<FindingCategory, FindingKind> = {
     email_address: "email",
@@ -109,6 +187,7 @@ function kindForCategory(category: FindingCategory): FindingKind {
     sensitive_url_parameter: "link",
     authentication_token: "credential",
     payment_card: "payment",
+    custom_sensitive: "custom",
   };
   return kinds[category];
 }
@@ -121,6 +200,7 @@ function titleForCategory(category: FindingCategory): string {
     sensitive_url_parameter: "Sensitive link",
     authentication_token: "Credential",
     payment_card: "Payment card",
+    custom_sensitive: "Protected term",
   };
   return titles[category];
 }
@@ -139,6 +219,8 @@ function findingIcon(kind: FindingKind) {
       return <KeyRound {...props} />;
     case "payment":
       return <CreditCard {...props} />;
+    case "custom":
+      return <Fingerprint {...props} />;
     case "barcode":
       return <QrCode {...props} />;
     case "metadata":
@@ -157,6 +239,7 @@ function reviewFindingFromText(finding: Finding, index: number): ReviewFinding {
     evidence: `Pasted text · ${finding.detectorId}`,
     detectorId: finding.detectorId,
     selected: true,
+    required: finding.category === "custom_sensitive",
     textFinding: finding,
   };
 }
@@ -209,11 +292,19 @@ function TextPreview({
 }
 
 function App() {
+  const [toolMode, setToolMode] = useState<ToolMode>("preflight");
   const [stage, setStage] = useState<AppStage>("empty");
   const [document, setDocument] = useState<PreflightDocument>();
   const [findings, setFindings] = useState<ReviewFinding[]>([]);
   const [result, setResult] = useState<PreflightResult>();
   const [textDraft, setTextDraft] = useState("");
+  const [protectedTermsDraft, setProtectedTermsDraft] = useState("");
+  const [activeProtectedTermCount, setActiveProtectedTermCount] = useState(0);
+  const [replacementMode, setReplacementMode] =
+    useState<ReplacementMode>("opaque");
+  const [aliasFallbackUsed, setAliasFallbackUsed] = useState(false);
+  const [installAvailable, setInstallAvailable] = useState(false);
+  const [receiptMatching, setReceiptMatching] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [notice, setNotice] = useState("");
@@ -227,15 +318,29 @@ function App() {
   const documentUrlRef = useRef<string | undefined>(undefined);
   const resultUrlRef = useRef<string | undefined>(undefined);
   const operationIdRef = useRef(0);
+  const detectorSnapshotRef = useRef<readonly TextDetector[]>(
+    BUILT_IN_TEXT_DETECTORS,
+  );
+  const installPromptRef = useRef<InstallPromptController | undefined>(
+    undefined,
+  );
 
   const selectedFindings = useMemo(
     () => findings.filter((finding) => finding.selected),
     [findings],
   );
+  const protectedTermDraftCount = useMemo(
+    () =>
+      protectedTermsDraft
+        .split(/\r\n?|\n/)
+        .filter((term) => term.trim().length > 0).length,
+    [protectedTermsDraft],
+  );
   const busy =
     stage === "inspecting" ||
     stage === "sanitizing" ||
-    stage === "verifying";
+    stage === "verifying" ||
+    receiptMatching;
 
   const cleanObjectUrls = useCallback(() => {
     if (document?.kind === "image") URL.revokeObjectURL(document.url);
@@ -272,14 +377,32 @@ function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [manualMode]);
 
+  useEffect(() => {
+    const controller = createInstallPromptController(setInstallAvailable);
+    installPromptRef.current = controller;
+    return () => {
+      controller.dispose();
+      if (installPromptRef.current === controller) {
+        installPromptRef.current = undefined;
+      }
+    };
+  }, []);
+
   const reset = useCallback(() => {
     operationIdRef.current += 1;
     cleanObjectUrls();
     setStage("empty");
+    setToolMode("preflight");
     setDocument(undefined);
     setFindings([]);
     setResult(undefined);
     setTextDraft("");
+    setProtectedTermsDraft("");
+    setActiveProtectedTermCount(0);
+    setReplacementMode("opaque");
+    setAliasFallbackUsed(false);
+    setReceiptMatching(false);
+    detectorSnapshotRef.current = BUILT_IN_TEXT_DETECTORS;
     setStatusMessage("");
     setErrorMessage("");
     setNotice("");
@@ -290,7 +413,32 @@ function App() {
     setViewOriginal(false);
   }, [cleanObjectUrls]);
 
-  const inspectImage = useCallback(async (file: File, synthetic = false) => {
+  const inspectImage = useCallback(async (
+    file: File,
+    synthetic = false,
+    forcedDetectors?: readonly TextDetector[],
+  ) => {
+    let detectors: readonly TextDetector[];
+    let protectedTermCount = 0;
+    try {
+      if (forcedDetectors) {
+        detectors = forcedDetectors;
+      } else {
+        const snapshot = detectorSnapshotForDraft(protectedTermsDraft);
+        detectors = snapshot.detectors;
+        protectedTermCount = snapshot.protectedTermCount;
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "The protected terms could not be used.",
+      );
+      setStage("empty");
+      return;
+    }
+    detectorSnapshotRef.current = detectors;
+    setActiveProtectedTermCount(protectedTermCount);
     const operationId = ++operationIdRef.current;
     setErrorMessage("");
     setNotice("");
@@ -353,7 +501,7 @@ function App() {
               ? `Visible-text engine: ${status} (${percent}%)`
               : `Visible-text engine: ${status}`,
           );
-        }),
+        }, detectors),
       ]);
       if (operationId !== operationIdRef.current) return;
 
@@ -366,6 +514,7 @@ function App() {
           evidence: `Visible text · OCR score ${Math.round(engineConfidence)}`,
           detectorId: finding.detectorId,
           selected: true,
+          required: finding.category === "custom_sensitive",
           box,
           valueHash,
         }),
@@ -433,13 +582,24 @@ function App() {
       setStatusMessage("");
       setStage("error");
     }
-  }, []);
+  }, [protectedTermsDraft]);
 
   const loadSample = useCallback(async () => {
+    const operationId = ++operationIdRef.current;
+    setErrorMessage("");
+    setNotice("");
+    setStage("inspecting");
+    setStatusMessage("Creating a local synthetic sample…");
     try {
+      setProtectedTermsDraft("");
+      setTextDraft("");
+      setActiveProtectedTermCount(0);
+      detectorSnapshotRef.current = BUILT_IN_TEXT_DETECTORS;
       const file = await createSampleFile();
-      await inspectImage(file, true);
+      if (operationId !== operationIdRef.current) return;
+      void inspectImage(file, true, BUILT_IN_TEXT_DETECTORS);
     } catch (error) {
+      if (operationId !== operationIdRef.current) return;
       setErrorMessage(
         error instanceof Error
           ? error.message
@@ -458,27 +618,55 @@ function App() {
       setErrorMessage("For this prototype, keep pasted text below 250,000 characters.");
       return;
     }
+    let detectors: readonly TextDetector[];
+    let protectedTermCount: number;
+    try {
+      const snapshot = detectorSnapshotForDraft(protectedTermsDraft);
+      detectors = snapshot.detectors;
+      protectedTermCount = snapshot.protectedTermCount;
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "The protected terms could not be used.",
+      );
+      return;
+    }
+    detectorSnapshotRef.current = detectors;
+    setActiveProtectedTermCount(protectedTermCount);
     const operationId = ++operationIdRef.current;
     setErrorMessage("");
     setNotice("");
     setStage("inspecting");
     setStatusMessage("Running deterministic privacy rules…");
-    const detected = detectText(text);
-    const reviewFindings = await Promise.all(
-      detected.map(async (finding, index) => ({
-        ...reviewFindingFromText(finding, index),
-        valueHash: await sha256(
-          text.slice(finding.start, finding.end),
-        ),
-      })),
-    );
-    if (operationId !== operationIdRef.current) return;
-    setDocument({ kind: "text", text });
-    setFindings(reviewFindings);
-    setScanSummary(EMPTY_SCANS);
-    setStatusMessage("");
-    setStage("reviewing");
-  }, []);
+    try {
+      const detected = detectText(text, { detectors });
+      const reviewFindings = await Promise.all(
+        detected.map(async (finding, index) => ({
+          ...reviewFindingFromText(finding, index),
+          valueHash: await findingValueHash(
+            text.slice(finding.start, finding.end),
+            finding.detectorId,
+          ),
+        })),
+      );
+      if (operationId !== operationIdRef.current) return;
+      setDocument({ kind: "text", text });
+      setFindings(reviewFindings);
+      setScanSummary(EMPTY_SCANS);
+      setStatusMessage("");
+      setStage("reviewing");
+    } catch (error) {
+      if (operationId !== operationIdRef.current) return;
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "The text check could not be completed.",
+      );
+      setStatusMessage("");
+      setStage("error");
+    }
+  }, [protectedTermsDraft]);
 
   const handleFile = useCallback(
     (file?: File) => {
@@ -488,7 +676,7 @@ function App() {
   );
 
   useEffect(() => {
-    if (stage !== "empty") return;
+    if (toolMode !== "preflight" || stage !== "empty") return;
     const onPaste = (event: globalThis.ClipboardEvent) => {
       const target = event.target;
       if (
@@ -515,7 +703,7 @@ function App() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [handleFile, inspectText, stage]);
+  }, [handleFile, inspectText, stage, toolMode]);
 
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
     handleFile(event.target.files?.[0]);
@@ -634,80 +822,126 @@ function App() {
   const sanitizeText = async () => {
     if (document?.kind !== "text") return;
     const operationId = ++operationIdRef.current;
+    setErrorMessage("");
     setStage("sanitizing");
     setStatusMessage("Replacing approved spans in a new text artifact…");
-    const selected = selectedFindings
-      .map((finding) => finding.textFinding)
-      .filter((finding): finding is Finding => Boolean(finding));
-    const redaction = redactText(document.text, { findings: selected });
-    setStage("verifying");
-    setStatusMessage("Re-scanning the sanitized text…");
-    const observedVerification = verifyText(redaction.sanitizedText);
-    const selectedHashes = selectedFindings
-      .map((finding) => finding.valueHash)
-      .filter((hash): hash is string => Boolean(hash));
-    const retainedHashes = findings
-      .filter((finding) => !finding.selected)
-      .map((finding) => finding.valueHash)
-      .filter((hash): hash is string => Boolean(hash));
-    const [hashedOutputFindings, outputHash] = await Promise.all([
-      Promise.all(
-        observedVerification.findings.map(async (finding) => ({
-          finding,
-          valueHash: await sha256(
-            redaction.sanitizedText.slice(finding.start, finding.end),
-          ),
-        })),
-      ),
-      sha256(redaction.sanitizedText),
-    ]);
-    if (operationId !== operationIdRef.current) return;
-    const classification = classifyOutputFindings(
-      hashedOutputFindings,
-      selectedHashes,
-      retainedHashes,
-    );
-    const selectedHashSet = new Set(selectedHashes);
-    const retainedHashSet = new Set(retainedHashes);
-    const blockingFindings = hashedOutputFindings
-      .filter(
-        ({ valueHash }) =>
-          selectedHashSet.has(valueHash) || !retainedHashSet.has(valueHash),
-      )
-      .map(({ finding }) => finding);
-    const rawResidue = selected.some((finding) => {
-      const value = document.text.slice(finding.start, finding.end);
-      return value.length > 0 && redaction.sanitizedText.includes(value);
-    });
-    const passed =
-      classification.selectedResidueCount === 0 &&
-      classification.unknownCount === 0 &&
-      !rawResidue;
-    const verification = {
-      status: passed ? ("pass" as const) : ("fail" as const),
-      passed,
-      remainingFindingCount: blockingFindings.length,
-      counts: summarizeFindings(blockingFindings),
-      findings: blockingFindings,
-    };
-    const receipt = buildReceipt({
-      sourceCharacterCount: document.text.length,
-      outputCharacterCount: redaction.sanitizedText.length,
-      outputSha256: outputHash,
-      acceptedFindings: redaction.acceptedFindings,
-      verification,
-      observedFindingCount: observedVerification.remainingFindingCount,
-    });
-    setResult({
-      kind: "text",
-      text: redaction.sanitizedText,
-      receipt,
-      passed,
-      retainedObservedCount: classification.retainedCount,
-      unknownObservedCount: classification.unknownCount,
-    });
-    setStatusMessage("");
-    setStage("result");
+    try {
+      const selectedReviewFindings = selectedFindings
+        .filter(
+          (
+            finding,
+          ): finding is ReviewFinding & { textFinding: Finding } =>
+            Boolean(finding.textFinding),
+        )
+        .sort(
+          (left, right) =>
+            left.textFinding.start - right.textFinding.start,
+        );
+      const selected = selectedReviewFindings.map(
+        (finding) => finding.textFinding,
+      );
+      const detectors = detectorSnapshotRef.current;
+      const opaqueReplacement = chooseOpaqueReplacement(detectors);
+      const aliases =
+        replacementMode === "aliases"
+          ? typedAliasMarkers(selectedReviewFindings).map((alias) =>
+              collisionSafeTypedAlias(alias, detectors, opaqueReplacement),
+            )
+          : [];
+      setAliasFallbackUsed(
+        replacementMode === "aliases" &&
+          aliases.some((alias) => alias === opaqueReplacement),
+      );
+      let aliasIndex = 0;
+      const redaction = redactText(document.text, {
+        findings: selected,
+        replacement: opaqueReplacement,
+        replacementForFinding:
+          replacementMode === "aliases"
+            ? () => aliases[aliasIndex++] ?? "[REDACTED]"
+            : undefined,
+      });
+      setStage("verifying");
+      setStatusMessage("Re-scanning the sanitized text…");
+      const observedVerification = verifyText(redaction.sanitizedText, {
+        detectors: detectorSnapshotRef.current,
+      });
+      const selectedHashes = selectedFindings
+        .map((finding) => finding.valueHash)
+        .filter((hash): hash is string => Boolean(hash));
+      const retainedHashes = findings
+        .filter((finding) => !finding.selected)
+        .map((finding) => finding.valueHash)
+        .filter((hash): hash is string => Boolean(hash));
+      const [hashedOutputFindings, outputHash] = await Promise.all([
+        Promise.all(
+          observedVerification.findings.map(async (finding) => ({
+            finding,
+            valueHash: await findingValueHash(
+              redaction.sanitizedText.slice(finding.start, finding.end),
+              finding.detectorId,
+            ),
+          })),
+        ),
+        sha256(redaction.sanitizedText),
+      ]);
+      if (operationId !== operationIdRef.current) return;
+      const classification = classifyOutputFindings(
+        hashedOutputFindings,
+        selectedHashes,
+        retainedHashes,
+      );
+      const selectedHashSet = new Set(selectedHashes);
+      const retainedHashSet = new Set(retainedHashes);
+      const blockingFindings = hashedOutputFindings
+        .filter(
+          ({ valueHash }) =>
+            selectedHashSet.has(valueHash) || !retainedHashSet.has(valueHash),
+        )
+        .map(({ finding }) => finding);
+      const rawResidue = selected.some((finding) => {
+        const value = document.text.slice(finding.start, finding.end);
+        return value.length > 0 && redaction.sanitizedText.includes(value);
+      });
+      const passed =
+        classification.selectedResidueCount === 0 &&
+        classification.unknownCount === 0 &&
+        !rawResidue;
+      const verification = {
+        status: passed ? ("pass" as const) : ("fail" as const),
+        passed,
+        remainingFindingCount: blockingFindings.length,
+        counts: summarizeFindings(blockingFindings),
+        findings: blockingFindings,
+      };
+      const receipt = buildReceipt({
+        sourceCharacterCount: document.text.length,
+        outputCharacterCount: redaction.sanitizedText.length,
+        outputSha256: outputHash,
+        acceptedFindings: redaction.acceptedFindings,
+        verification,
+        observedFindingCount: observedVerification.remainingFindingCount,
+      });
+      setResult({
+        kind: "text",
+        text: redaction.sanitizedText,
+        receipt,
+        passed,
+        retainedObservedCount: classification.retainedCount,
+        unknownObservedCount: classification.unknownCount,
+      });
+      setStatusMessage("");
+      setStage("result");
+    } catch (error) {
+      if (operationId !== operationIdRef.current) return;
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "The checked text could not be created and verified.",
+      );
+      setStatusMessage("");
+      setStage("error");
+    }
   };
 
   const sanitizeImage = async () => {
@@ -764,6 +998,7 @@ function App() {
                   setStatusMessage(`Checking exported bytes: ${status}…`);
                 }
               },
+              detectorSnapshotRef.current,
             );
       const [solid, metadata, pngChunks, barcode, ocr] = await Promise.all([
         solidPromise,
@@ -848,7 +1083,7 @@ function App() {
           checks,
         },
         engines: {
-          deterministicRules: "aura-rules/0.1.0",
+          deterministicRules: "aura-rules/0.2.0",
           ocr: "tesseract.js/7.0.0",
           barcode: "@zxing/browser/0.1.5",
           metadata: "exifreader/4.44.0",
@@ -857,7 +1092,7 @@ function App() {
           "original-bytes-unchanged",
           "output-newly-encoded",
           "raw-sensitive-values-excluded-from-receipt",
-          ...(solid && everySelectedVisualFindingHasBox
+          ...(boxes.length > 0 && solid && everySelectedVisualFindingHasBox
             ? ["selected-redaction-pixels-verified"]
             : []),
         ],
@@ -900,7 +1135,10 @@ function App() {
   };
 
   const sanitize = () => {
-    if (!selectedFindings.length) {
+    const isZeroFindingImage =
+      document?.kind === "image" && findings.length === 0;
+
+    if (!selectedFindings.length && !isZeroFindingImage) {
       setNotice("Select at least one finding or add a manual redaction first.");
       return;
     }
@@ -924,6 +1162,39 @@ function App() {
       setNotice("Checked copy placed on your clipboard.");
     } catch {
       setNotice("Clipboard access was unavailable. Use the save button instead.");
+    }
+  };
+
+  const shareOutput = async () => {
+    if (!result?.passed || typeof navigator.share !== "function") return;
+    try {
+      if (result.kind === "text") {
+        await navigator.share({
+          title: "Aura checked copy",
+          text: result.text,
+        });
+      } else {
+        const file = new File([result.blob], outputFilename(), {
+          type: "image/png",
+        });
+        if (
+          typeof navigator.canShare !== "function" ||
+          !navigator.canShare({ files: [file] })
+        ) {
+          setNotice(
+            "This browser cannot share PNG files directly. Save the checked copy instead.",
+          );
+          return;
+        }
+        await navigator.share({
+          title: "Aura checked copy",
+          files: [file],
+        });
+      }
+      setNotice("Checked copy shared through your device.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setNotice("System sharing was unavailable. Save the checked copy instead.");
     }
   };
 
@@ -955,6 +1226,42 @@ function App() {
     renderingResultImage && document.synthetic;
   const completedSyntheticDemo =
     Boolean(renderingSyntheticDemo && result?.passed);
+  const nativeShareAvailable = (() => {
+    if (
+      typeof navigator === "undefined" ||
+      typeof navigator.share !== "function" ||
+      !result
+    ) {
+      return false;
+    }
+    if (result.kind === "text") return true;
+    if (typeof navigator.canShare !== "function") return false;
+    try {
+      return navigator.canShare({
+        files: [
+          new File([result.blob], "aura-checked.png", {
+            type: "image/png",
+          }),
+        ],
+      });
+    } catch {
+      return false;
+    }
+  })();
+
+  const openReceiptMatcher = () => {
+    reset();
+    setToolMode("receipt");
+  };
+
+  const installAura = async () => {
+    const outcome = await installPromptRef.current?.prompt();
+    if (outcome === "dismissed") {
+      setNotice("Installation was dismissed; you can keep using Aura in this tab.");
+    } else if (outcome === "error") {
+      setNotice("The browser could not open its install prompt.");
+    }
+  };
 
   return (
     <div className="app">
@@ -971,26 +1278,33 @@ function App() {
           </span>
           <span>Aura</span>
           <span className="brand-product">Preflight</span>
-          <span className="prototype-tag">prototype</span>
+          <span className="prototype-tag">v0.2</span>
         </button>
 
-        <nav className="stage-rail" aria-label="Preflight progress">
-          {STAGES.map((label, index) => {
-            const active = index === activeStageIndex(stage);
-            const complete = index < activeStageIndex(stage);
-            return (
-              <div
-                className={`stage-step${active ? " active" : ""}${complete ? " complete" : ""}`}
-                key={label}
-              >
-                <span className="stage-dot">
-                  {complete ? <Check size={11} /> : index + 1}
-                </span>
-                <span>{label}</span>
-              </div>
-            );
-          })}
-        </nav>
+        {toolMode === "preflight" ? (
+          <nav className="stage-rail" aria-label="Preflight progress">
+            {STAGES.map((label, index) => {
+              const active = index === activeStageIndex(stage);
+              const complete = index < activeStageIndex(stage);
+              return (
+                <div
+                  className={`stage-step${active ? " active" : ""}${complete ? " complete" : ""}`}
+                  key={label}
+                >
+                  <span className="stage-dot">
+                    {complete ? <Check size={11} /> : index + 1}
+                  </span>
+                  <span>{label}</span>
+                </div>
+              );
+            })}
+          </nav>
+        ) : (
+          <div className="tool-mode-label">
+            <FileCheck2 size={16} />
+            Receipt matcher
+          </div>
+        )}
 
         <div className="header-trust">
           <LockKeyhole size={15} />
@@ -1010,7 +1324,13 @@ function App() {
         </a>
       </header>
 
-      {document?.kind === "image" && document.synthetic && (
+      {toolMode === "receipt" && (
+        <ReceiptMatcher onBack={reset} onBusyChange={setReceiptMatching} />
+      )}
+
+      {toolMode === "preflight" &&
+        document?.kind === "image" &&
+        document.synthetic && (
         <div className="demo-banner">
           <Sparkles size={15} />
           <strong>Synthetic demo</strong>
@@ -1018,7 +1338,7 @@ function App() {
         </div>
       )}
 
-      {stage === "empty" && (
+      {toolMode === "preflight" && stage === "empty" && (
         <main className="empty-page">
           <section className="hero">
             <div className="eyebrow">
@@ -1048,7 +1368,30 @@ function App() {
                 <Upload size={18} />
                 Choose image
               </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={openReceiptMatcher}
+              >
+                <FileCheck2 size={18} />
+                Match a receipt
+              </button>
+              {installAvailable && (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void installAura()}
+                >
+                  <MonitorDown size={18} />
+                  Install offline
+                </button>
+              )}
             </div>
+            {notice && (
+              <p className="hero-notice" role="status">
+                {notice}
+              </p>
+            )}
             <div className="trust-row">
               <span>
                 <WifiOff size={15} /> No upload
@@ -1084,6 +1427,42 @@ function App() {
               </button>
             </div>
             <div className="or-divider">
+              <span>optional personal privacy lens</span>
+            </div>
+            <details className="protected-terms">
+              <summary>
+                <span>
+                  <Fingerprint size={16} />
+                  Always hide
+                </span>
+                <span className="session-badge">Session only</span>
+              </summary>
+              <div className="protected-terms-body">
+                <label htmlFor="protected-terms">
+                  Names, handles, IDs, or project terms — one literal phrase
+                  per line, matched wherever it appears
+                </label>
+                <textarea
+                  id="protected-terms"
+                  value={protectedTermsDraft}
+                  onChange={(event) => {
+                    setProtectedTermsDraft(event.target.value);
+                    setErrorMessage("");
+                  }}
+                  placeholder={"Acme launch\n@private-handle"}
+                  rows={3}
+                  maxLength={PROTECTED_TERMS_DRAFT_LIMIT}
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-describedby="protected-terms-note"
+                />
+                <p id="protected-terms-note">
+                  {protectedTermDraftCount}/{MAX_PROTECTED_TERMS} entries · kept
+                  only in memory and forgotten on reset
+                </p>
+              </div>
+            </details>
+            <div className="or-divider">
               <span>or check pasted text</span>
             </div>
             <label className="text-input-label" htmlFor="text-input">
@@ -1098,6 +1477,12 @@ function App() {
               rows={6}
               spellCheck={false}
             />
+            {errorMessage && (
+              <div className="input-error" role="alert">
+                <CircleAlert size={15} />
+                {errorMessage}
+              </div>
+            )}
             <button
               className="text-check-button"
               type="button"
@@ -1119,9 +1504,10 @@ function App() {
         </main>
       )}
 
-      {(stage === "inspecting" ||
-        stage === "sanitizing" ||
-        stage === "verifying") && (
+      {toolMode === "preflight" &&
+        (stage === "inspecting" ||
+          stage === "sanitizing" ||
+          stage === "verifying") && (
         <main className="working-page" aria-live="polite">
           <div className="working-orbit">
             <LoaderCircle size={34} className="spinner" />
@@ -1150,7 +1536,7 @@ function App() {
         </main>
       )}
 
-      {stage === "reviewing" && document && (
+      {toolMode === "preflight" && stage === "reviewing" && document && (
         <main className="review-page">
           <section className="artifact-panel">
             <div className="panel-heading">
@@ -1273,6 +1659,16 @@ function App() {
               </div>
             )}
 
+            {activeProtectedTermCount > 0 && (
+              <div className="privacy-lens-status">
+                <Fingerprint size={14} />
+                <span>
+                  {activeProtectedTermCount} session-only configured line
+                  {activeProtectedTermCount === 1 ? "" : "s"} active
+                </span>
+              </div>
+            )}
+
             <p className="findings-instruction">
               Select what to remove. Masked previews help you review without
               repeating complete values. Hidden metadata is always removed by
@@ -1337,6 +1733,38 @@ function App() {
               ))}
             </div>
 
+            {document.kind === "text" && (
+              <fieldset className="replacement-mode">
+                <legend>Replacement style</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="replacement-mode"
+                    value="opaque"
+                    checked={replacementMode === "opaque"}
+                    onChange={() => setReplacementMode("opaque")}
+                  />
+                  <span>
+                    <strong>Opaque</strong>
+                    <small>[REDACTED]</small>
+                  </span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="replacement-mode"
+                    value="aliases"
+                    checked={replacementMode === "aliases"}
+                    onChange={() => setReplacementMode("aliases")}
+                  />
+                  <span>
+                    <strong>Readable aliases</strong>
+                    <small>[EMAIL_1], [TOKEN_1]…</small>
+                  </span>
+                </label>
+              </fieldset>
+            )}
+
             <div className="review-caution">
               <CircleAlert size={16} />
               <span>Review the whole artifact; automatic detection can miss.</span>
@@ -1351,7 +1779,10 @@ function App() {
                 className="primary-button create-button"
                 type="button"
                 onClick={sanitize}
-                disabled={!selectedFindings.length}
+                disabled={
+                  !selectedFindings.length &&
+                  !(document.kind === "image" && findings.length === 0)
+                }
               >
                 Create checked copy
                 <ChevronRight size={18} />
@@ -1361,7 +1792,7 @@ function App() {
         </main>
       )}
 
-      {stage === "result" && result && document && (
+      {toolMode === "preflight" && stage === "result" && result && document && (
         <main className="result-page">
           <section className="result-artifact">
             <div className="panel-heading">
@@ -1472,9 +1903,17 @@ function App() {
                     <span>
                       <strong>
                         {selectedFindings.length} approved text span
-                        {selectedFindings.length === 1 ? "" : "s"} replaced
+                        {selectedFindings.length === 1 ? "" : "s"} replaced with{" "}
+                        {replacementMode === "aliases"
+                          ? aliasFallbackUsed
+                            ? "typed aliases with a safe opaque fallback"
+                            : "typed aliases"
+                          : "opaque markers"}
                       </strong>
-                      <small>Fixed markers were written into a new artifact.</small>
+                      <small>
+                        Stable, non-sensitive markers were written into a new
+                        artifact.
+                      </small>
                     </span>
                   </div>
                   <div className={`check-row ${result.passed ? "passed" : "failed"}`}>
@@ -1538,6 +1977,17 @@ function App() {
                 <Download size={17} />
                 Save {result.kind === "image" ? "PNG" : "text"}
               </button>
+              {nativeShareAvailable && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void shareOutput()}
+                  disabled={!result.passed}
+                >
+                  <Share2 size={17} />
+                  Share checked copy
+                </button>
+              )}
             </div>
             <button className="receipt-button" type="button" onClick={saveReceipt}>
               <FileJson size={16} />
@@ -1561,7 +2011,7 @@ function App() {
         </main>
       )}
 
-      {stage === "error" && (
+      {toolMode === "preflight" && stage === "error" && (
         <main className="error-page" role="alert">
           <div className="error-icon">
             <CircleAlert size={28} />
@@ -1576,13 +2026,15 @@ function App() {
         </main>
       )}
 
-      <input
-        ref={fileInputRef}
-        className="visually-hidden"
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        onChange={onFileInput}
-      />
+      {toolMode === "preflight" && (
+        <input
+          ref={fileInputRef}
+          className="visually-hidden"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={onFileInput}
+        />
+      )}
     </div>
   );
 }

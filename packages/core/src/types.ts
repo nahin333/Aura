@@ -5,6 +5,7 @@ export const FINDING_CATEGORIES = [
   "sensitive_url_parameter",
   "authentication_token",
   "payment_card",
+  "custom_sensitive",
 ] as const;
 
 export type FindingCategory = (typeof FINDING_CATEGORIES)[number];
@@ -51,6 +52,19 @@ export interface RedactTextOptions {
   readonly findings?: readonly Finding[];
   /** A fixed, non-sensitive marker. Defaults to `[REDACTED]`. */
   readonly replacement?: string;
+  /**
+   * Chooses a non-sensitive marker for each accepted finding. The callback
+   * receives aggregate properties only and takes precedence over `replacement`.
+   */
+  readonly replacementForFinding?: (
+    finding: RedactionReplacementContext,
+  ) => string;
+}
+
+export interface RedactionReplacementContext {
+  readonly category: FindingCategory;
+  readonly severity: FindingSeverity;
+  readonly detectorId: string;
 }
 
 export interface RedactionResult {

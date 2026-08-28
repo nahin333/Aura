@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import process from "node:process";
 import { Builder, By, until } from "selenium-webdriver";
@@ -44,8 +45,14 @@ async function assertEnabledActions(labels) {
       );
     }
   }
-  if (observed.length !== labels.length) {
+  const allowed = new Set([...labels, "Share checked copy"]);
+  const unexpected = observed.filter((item) => !allowed.has(item.label));
+  if (unexpected.length) {
     throw new Error(`Unexpected result actions: ${JSON.stringify(observed)}.`);
+  }
+  const share = observed.find((item) => item.label === "Share checked copy");
+  if (share && !share.enabled) {
+    throw new Error("The optional native share action was unexpectedly disabled.");
   }
 }
 
@@ -75,6 +82,45 @@ function assertNoForbiddenReceiptData(receipt, rawValues) {
       throw new Error("Diagnostic receipt contained a raw fixture value.");
     }
   }
+}
+
+async function captureReceiptText() {
+  await driver.executeScript(
+    "window.__auraCapturedReceipt = null;" +
+      "window.__auraCapturedCreateObjectURL = URL.createObjectURL.bind(URL);" +
+      "window.__auraCapturedAnchorClick = HTMLAnchorElement.prototype.click;" +
+      "URL.createObjectURL = function(blob) {" +
+      "if (blob && blob.type === 'application/json') {" +
+      "blob.text().then((value) => { window.__auraCapturedReceipt = value; });" +
+      "return 'blob:aura-captured-receipt';" +
+      "}" +
+      "return window.__auraCapturedCreateObjectURL(blob);" +
+      "};" +
+      "HTMLAnchorElement.prototype.click = function() {" +
+      "if (this.download && this.download.endsWith('.json')) return;" +
+      "return window.__auraCapturedAnchorClick.call(this);" +
+      "};",
+  );
+  await driver
+    .findElement(
+      By.xpath("//button[contains(normalize-space(.), 'Download diagnostic receipt')]"),
+    )
+    .click();
+  await driver.wait(
+    async () =>
+      Boolean(
+        await driver.executeScript("return window.__auraCapturedReceipt;"),
+      ),
+    5_000,
+  );
+  const receiptText = await driver.executeScript(
+    "return window.__auraCapturedReceipt;",
+  );
+  await driver.executeScript(
+    "URL.createObjectURL = window.__auraCapturedCreateObjectURL;" +
+      "HTMLAnchorElement.prototype.click = window.__auraCapturedAnchorClick;",
+  );
+  return String(receiptText);
 }
 
 try {
@@ -137,6 +183,24 @@ try {
     ocrSource,
     "base64",
   );
+  const blankSource = await driver.executeAsyncScript(
+    "const done = arguments[arguments.length - 1];" +
+      "const canvas = document.createElement('canvas');" +
+      "canvas.width = 900; canvas.height = 540;" +
+      "const context = canvas.getContext('2d');" +
+      "context.fillStyle = '#ffffff'; context.fillRect(0, 0, 900, 540);" +
+      "canvas.toBlob((blob) => {" +
+      "if (!blob) { done(null); return; }" +
+      "const reader = new FileReader();" +
+      "reader.onload = () => done(String(reader.result).split(',')[1]);" +
+      "reader.onerror = () => done(null);" +
+      "reader.readAsDataURL(blob);" +
+      "}, 'image/png');",
+  );
+  if (typeof blankSource !== "string") {
+    throw new Error("Could not create the blank image fixture.");
+  }
+  await writeFile(`${artifactDir}/blank-source.png`, blankSource, "base64");
 
   await driver.findElement(By.css(".manual-button")).click();
   const imageStage = await driver.findElement(By.css(".image-stage"));
@@ -310,6 +374,170 @@ try {
   }
 
   await driver.findElement(By.css(".check-another")).click();
+  await driver.wait(
+    until.elementLocated(By.css(".protected-terms summary")),
+    10_000,
+  );
+  await driver.findElement(By.css(".protected-terms summary")).click();
+  const protectedTermInput = await driver.findElement(
+    By.css("#protected-terms"),
+  );
+  await protectedTermInput.sendKeys("Project Cinder");
+  const protectedText =
+    "Project Cinder meets alice@example.com. PROJECT CINDER stays private.";
+  await driver.findElement(By.css("#text-input")).sendKeys(protectedText);
+  await driver.findElement(By.css(".text-check-button")).click();
+  await driver.wait(until.elementLocated(By.css(".findings-panel")), 10_000);
+  const protectedRows = await driver.findElements(By.css(".finding-row"));
+  if (protectedRows.length !== 3) {
+    throw new Error(
+      `Expected 3 personal-lens findings, received ${protectedRows.length}.`,
+    );
+  }
+  const protectedTitles = await Promise.all(
+    protectedRows.map((row) =>
+      row.findElement(By.css(".finding-title")).getText(),
+    ),
+  );
+  if (
+    protectedTitles.filter((title) => title === "Protected term").length !== 2 ||
+    !protectedTitles.includes("Email address")
+  ) {
+    throw new Error(
+      `Unexpected personal-lens findings: ${JSON.stringify(protectedTitles)}.`,
+    );
+  }
+  const protectedRowsWithTitles = await Promise.all(
+    protectedRows.map(async (row) => ({
+      title: await row.findElement(By.css(".finding-title")).getText(),
+      enabled: await row.findElement(By.css("input[type='checkbox']")).isEnabled(),
+    })),
+  );
+  if (
+    protectedRowsWithTitles.some(
+      ({ title, enabled }) => title === "Protected term" && enabled,
+    ) ||
+    protectedRowsWithTitles.some(
+      ({ title, enabled }) => title === "Email address" && !enabled,
+    )
+  ) {
+    throw new Error(
+      `Always-hide controls were not enforced: ${JSON.stringify(protectedRowsWithTitles)}.`,
+    );
+  }
+  const privacyLensStatus = await driver
+    .findElement(By.css(".privacy-lens-status"))
+    .getText();
+  if (!privacyLensStatus.includes("1 session-only configured line")) {
+    throw new Error(`Unexpected privacy lens status: ${privacyLensStatus}`);
+  }
+  await driver.findElement(
+    By.css(".replacement-mode input[value='aliases']"),
+  ).click();
+  await driver.findElement(By.css(".create-button")).click();
+  await driver.wait(until.elementLocated(By.css(".receipt-panel")), 10_000);
+  const protectedHeading = await driver
+    .findElement(By.css(".receipt-panel h2"))
+    .getText();
+  if (protectedHeading !== "Export checks passed") {
+    throw new Error(`Unexpected personal-lens result: ${protectedHeading}`);
+  }
+  const protectedOutput = await driver
+    .findElement(By.css(".result-text"))
+    .getText();
+  const expectedProtectedOutput =
+    "[PROTECTED_1] meets [EMAIL_1]. [PROTECTED_1] stays private.";
+  if (protectedOutput !== expectedProtectedOutput) {
+    throw new Error(
+      `Readable aliases were not stable: ${JSON.stringify(protectedOutput)}.`,
+    );
+  }
+  await assertEnabledActions(["Copy text", "Save text"]);
+
+  const protectedReceiptText = await captureReceiptText();
+  const protectedReceipt = JSON.parse(protectedReceiptText);
+  if (
+    protectedReceipt.verification?.status !== "pass" ||
+    protectedReceipt.redaction?.byCategory?.custom_sensitive !== 2
+  ) {
+    throw new Error(
+      `Unexpected protected-term receipt: ${JSON.stringify(protectedReceipt)}`,
+    );
+  }
+  assertNoForbiddenReceiptData(protectedReceipt, [
+    "Project Cinder",
+    "PROJECT CINDER",
+  ]);
+  for (const rawValue of ["Project Cinder", "PROJECT CINDER"]) {
+    const rawHash = createHash("sha256").update(rawValue).digest("hex");
+    if (protectedReceiptText.includes(rawHash)) {
+      throw new Error("A personal protected-term hash leaked into the receipt.");
+    }
+  }
+  await writeFile(
+    `${artifactDir}/receipt-match-checked.txt`,
+    protectedOutput,
+    "utf8",
+  );
+  await writeFile(
+    `${artifactDir}/receipt-match-receipt.json`,
+    protectedReceiptText,
+    "utf8",
+  );
+
+  await driver.findElement(By.css(".check-another")).click();
+  await driver
+    .findElement(
+      By.xpath("//button[contains(normalize-space(.), 'Match a receipt')]"),
+    )
+    .click();
+  await driver.wait(
+    until.elementLocated(By.css(".receipt-matcher")),
+    10_000,
+  );
+  await driver.executeScript(
+    "const event = new Event('paste', { bubbles: true, cancelable: true });" +
+      "Object.defineProperty(event, 'clipboardData', { value: {" +
+      "files: [], getData: () => 'alice@example.com'" +
+      "} });" +
+      "window.dispatchEvent(event);",
+  );
+  await driver.sleep(100);
+  const visibleMains = await driver.findElements(By.css("main"));
+  if (
+    visibleMains.length !== 1 ||
+    !(await visibleMains[0].getAttribute("class")).includes("receipt-matcher")
+  ) {
+    throw new Error("Pasting escaped the isolated receipt-matcher mode.");
+  }
+  const matcherInputs = await driver.findElements(
+    By.css(".receipt-matcher__input"),
+  );
+  if (matcherInputs.length !== 2) {
+    throw new Error(
+      `Expected two receipt matcher inputs, received ${matcherInputs.length}.`,
+    );
+  }
+  await matcherInputs[0].sendKeys(
+    resolve(artifactDir, "receipt-match-checked.txt"),
+  );
+  await matcherInputs[1].sendKeys(
+    resolve(artifactDir, "receipt-match-receipt.json"),
+  );
+  await driver.findElement(By.css(".receipt-matcher__submit")).click();
+  await driver.wait(
+    until.elementLocated(By.css(".receipt-matcher__result--match")),
+    10_000,
+  );
+  const matchHeading = await driver
+    .findElement(By.css(".receipt-matcher__result h2"))
+    .getText();
+  if (matchHeading !== "Artifact matches receipt") {
+    throw new Error(`Unexpected receipt match result: ${matchHeading}`);
+  }
+  await driver.findElement(By.css(".receipt-matcher__back")).click();
+  await driver.wait(until.elementLocated(By.css("#text-input")), 10_000);
+
   const selectiveTextArea = await driver.wait(
     until.elementLocated(By.css("#text-input")),
     10_000,
@@ -352,8 +580,69 @@ try {
   await assertEnabledActions(["Copy text", "Save text"]);
 
   await driver.findElement(By.css(".check-another")).click();
+  const blankFileInput = await driver.wait(
+    until.elementLocated(By.css("input.visually-hidden[type='file']")),
+    10_000,
+  );
+  await blankFileInput.sendKeys(resolve(artifactDir, "blank-source.png"));
+  await driver.wait(until.elementLocated(By.css(".findings-panel")), 120_000);
+  const blankFindings = await driver.findElements(By.css(".finding-row"));
+  if (blankFindings.length !== 0) {
+    const blankTitles = await Promise.all(
+      blankFindings.map((row) =>
+        row.findElement(By.css(".finding-title")).getText(),
+      ),
+    );
+    throw new Error(
+      `Expected a zero-finding blank image, received ${JSON.stringify(blankTitles)}.`,
+    );
+  }
+  const blankCreateButton = await driver.findElement(By.css(".create-button"));
+  if (!(await blankCreateButton.isEnabled())) {
+    throw new Error("Zero-finding image export was unexpectedly disabled.");
+  }
+  await blankCreateButton.click();
+  await driver.wait(until.elementLocated(By.css(".receipt-panel")), 120_000);
+  const blankHeading = await driver
+    .findElement(By.css(".receipt-panel h2"))
+    .getText();
+  if (blankHeading !== "Export checks passed") {
+    throw new Error(`Unexpected blank-image result: ${blankHeading}`);
+  }
+  const blankPassedChecks = await driver.findElements(
+    By.css(".check-row.passed"),
+  );
+  if (blankPassedChecks.length !== 6) {
+    throw new Error(
+      `Expected 6 blank-image checks to pass, received ${blankPassedChecks.length}.`,
+    );
+  }
+  const noVisualCheck = await driver
+    .findElement(
+      By.xpath(
+        "//div[contains(@class,'check-row')][.//strong[contains(.,'No visual redactions required')]]",
+      ),
+    )
+    .getText();
+  if (!noVisualCheck.includes("no supported or manual visual regions")) {
+    throw new Error(`Unexpected zero-redaction check: ${noVisualCheck}`);
+  }
+  await assertEnabledActions(["Copy image", "Save PNG"]);
+  const blankReceipt = JSON.parse(await captureReceiptText());
+  if (
+    blankReceipt.redaction?.selectedCount !== 0 ||
+    blankReceipt.properties?.includes(
+      "selected-redaction-pixels-verified",
+    )
+  ) {
+    throw new Error(
+      `Blank-image receipt overstated redaction work: ${JSON.stringify(blankReceipt)}`,
+    );
+  }
+
+  await driver.findElement(By.css(".check-another")).click();
   const fileInput = await driver.wait(
-    until.elementLocated(By.css("input[type='file']")),
+    until.elementLocated(By.css("input.visually-hidden[type='file']")),
     10_000,
   );
   await fileInput.sendKeys(resolve(artifactDir, "ocr-source.png"));
@@ -445,8 +734,61 @@ try {
     );
   }
 
+  await driver.manage().setTimeouts({ script: 30_000 });
+  const pwaAudit = await driver.executeAsyncScript(`
+    const done = arguments[arguments.length - 1];
+    (async () => {
+      if (!("serviceWorker" in navigator) || !("caches" in window)) {
+        throw new Error("This browser does not expose the required PWA APIs.");
+      }
+      const registration = await navigator.serviceWorker.ready;
+      if (!registration.active) {
+        throw new Error("The production service worker did not activate.");
+      }
+      const workerResponse = await fetch(new URL("sw.js", registration.scope), {
+        cache: "no-store",
+      });
+      const workerSource = await workerResponse.text();
+      const manifestMatch = workerSource.match(
+        /const PRECACHE = (\\[[\\s\\S]*?\\]);\\nconst PRECACHE_REVISIONS/,
+      );
+      if (!workerResponse.ok || !manifestMatch) {
+        throw new Error("The generated worker manifest could not be inspected.");
+      }
+      const expectedEntries = JSON.parse(manifestMatch[1]).map(({ url }) =>
+        new URL(url, registration.scope).href,
+      );
+      const expectedPrefix =
+        "aura-preflight-static:" + registration.scope + ":";
+      const scopedCacheNames = (await caches.keys()).filter((name) =>
+        name.startsWith(expectedPrefix),
+      );
+      if (scopedCacheNames.length !== 1) {
+        throw new Error("Expected exactly one scope-isolated Aura static cache.");
+      }
+      const cache = await caches.open(scopedCacheNames[0]);
+      const cachedUrls = (await cache.keys()).map((request) => request.url);
+      if (
+        cachedUrls.length !== expectedEntries.length ||
+        expectedEntries.some((url) => !cachedUrls.includes(url)) ||
+        cachedUrls.some((url) => !expectedEntries.includes(url))
+      ) {
+        throw new Error("The installed cache differs from the generated manifest.");
+      }
+      return {
+        scope: registration.scope,
+        cacheName: scopedCacheNames[0],
+        cachedCount: cachedUrls.length,
+      };
+    })().then(done, (error) => done({ error: String(error?.message ?? error) }));
+  `);
+  const expectedScope = new URL("./", baseUrl).href;
+  if (pwaAudit.error || pwaAudit.scope !== expectedScope || pwaAudit.cachedCount < 1) {
+    throw new Error(`PWA runtime audit failed: ${JSON.stringify(pwaAudit)}.`);
+  }
+
   process.stdout.write(
-    "Aura browser smoke tests passed: demo/manual receipt, text selection, real local image verification, and same-origin runtime audit.\n",
+    "Aura browser smoke tests passed: demo/manual receipt, personal aliases, receipt matching, zero-finding export, selective text, real local image verification, same-origin runtime, and exact PWA static cache.\n",
   );
 } finally {
   await driver.quit();

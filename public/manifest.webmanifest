@@ -1,0 +1,33 @@
+{
+  "name": "Aura Preflight",
+  "short_name": "Aura",
+  "description": "Inspect, sanitize, and verify privacy-sensitive text and images locally before sharing.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f0e7",
+  "theme_color": "#f3f0e7",
+  "orientation": "any",
+  "categories": ["security", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "./icons/aura-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/aura-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/aura-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

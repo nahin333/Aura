@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILT_IN_TEXT_DETECTORS,
   buildReceipt,
+  createProtectedTermDetector,
   detectText,
+  PROTECTED_TERM_DETECTOR_ID,
   redactText,
   resolveFindingOverlaps,
   verifyText,
@@ -51,6 +54,43 @@ describe("text privacy pipeline", () => {
       end: 27,
     });
     expect(redaction.sanitizedText).toBe("prefix-[REDACTED]-suffix");
+  });
+
+  it("resolves a large connected overlap group without spread or quadratic scans", () => {
+    const findings = Array.from({ length: 20_000 }, (_, index) => ({
+      category: "email_address" as const,
+      severity: "medium" as const,
+      start: index,
+      end: index + 2,
+      maskedPreview: "••••",
+      detectorId: "test.connected",
+      confidence: 0.8,
+    }));
+
+    expect(resolveFindingOverlaps(findings)).toEqual([
+      expect.objectContaining({ start: 0, end: 20_001 }),
+    ]);
+  });
+
+  it("keeps an Always hide term authoritative across a credential overlap", () => {
+    const text = "password=SecretValue";
+    const findings = detectText(text, {
+      detectors: [
+        ...BUILT_IN_TEXT_DETECTORS,
+        createProtectedTermDetector(["SecretValue"]),
+      ],
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      category: "custom_sensitive",
+      detectorId: PROTECTED_TERM_DETECTOR_ID,
+      start: text.indexOf("SecretValue"),
+      end: text.length,
+    });
+    expect(redactText(text, { findings }).sanitizedText).toBe(
+      "password=[REDACTED]",
+    );
   });
 
   it("destructively redacts all accepted spans and verifies the new text", () => {

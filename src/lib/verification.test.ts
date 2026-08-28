@@ -54,6 +54,38 @@ describe("image verification checks", () => {
     expect(result.barcode.retainedCount).toBe(1);
   });
 
+  it("passes the visual check when a reviewed image needs no visual redactions", () => {
+    const result = buildImageChecks({
+      ...clean,
+      visualRegionCount: 0,
+    });
+    const pixelCheck = result.checks.find(
+      (check) => check.id === "pixels.flattened",
+    );
+
+    expect(result.passed).toBe(true);
+    expect(pixelCheck).toMatchObject({
+      label: "No visual redactions required",
+      status: "passed",
+    });
+  });
+
+  it("does not call a missing selected box a no-redaction review", () => {
+    const result = buildImageChecks({
+      ...clean,
+      visualRegionCount: 0,
+      everySelectedVisualFindingHasBox: false,
+    });
+    const pixelCheck = result.checks.find(
+      (check) => check.id === "pixels.flattened",
+    );
+
+    expect(pixelCheck).toMatchObject({
+      label: "Selected visual regions flattened",
+      status: "failed",
+    });
+  });
+
   it.each([
     ["decode failure", { dimensions: undefined }],
     ["pixel failure", { solid: false }],

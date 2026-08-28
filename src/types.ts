@@ -16,6 +16,7 @@ export type FindingKind =
   | "link"
   | "credential"
   | "payment"
+  | "custom"
   | "barcode"
   | "metadata"
   | "manual";

@@ -1,4 +1,5 @@
 import { BUILT_IN_DETECTOR_IDS } from "./detectors";
+import { PROTECTED_TERM_DETECTOR_ID } from "./literal";
 import { resolveFindingOverlaps } from "./overlap";
 import { summarizeFindings } from "./summarize";
 import {
@@ -15,7 +16,10 @@ import {
 
 const KNOWN_CATEGORIES = new Set<string>(FINDING_CATEGORIES);
 const KNOWN_SEVERITIES = new Set<string>(FINDING_SEVERITIES);
-const KNOWN_DETECTOR_IDS = new Set<string>(BUILT_IN_DETECTOR_IDS);
+const KNOWN_DETECTOR_IDS = new Set<string>([
+  ...BUILT_IN_DETECTOR_IDS,
+  PROTECTED_TERM_DETECTOR_ID,
+]);
 
 function nonNegativeInteger(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value < 0) {

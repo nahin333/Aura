@@ -1,3 +1,4 @@
+import { PROTECTED_TERM_DETECTOR_ID } from "./literal";
 import type { Finding, FindingSeverity } from "./types";
 
 const SEVERITY_PRIORITY: Readonly<Record<FindingSeverity, number>> = {
@@ -20,22 +21,28 @@ function isValidFinding(finding: Finding): boolean {
 }
 
 function compareRank(left: Finding, right: Finding): number {
-      const severityDifference =
-        SEVERITY_PRIORITY[right.severity] - SEVERITY_PRIORITY[left.severity];
-      if (severityDifference !== 0) {
+  const protectedTermDifference =
+    Number(right.detectorId === PROTECTED_TERM_DETECTOR_ID) -
+    Number(left.detectorId === PROTECTED_TERM_DETECTOR_ID);
+  if (protectedTermDifference !== 0) {
+    return protectedTermDifference;
+  }
+  const severityDifference =
+    SEVERITY_PRIORITY[right.severity] - SEVERITY_PRIORITY[left.severity];
+  if (severityDifference !== 0) {
     return severityDifference;
-      }
-      const confidenceDifference = right.confidence - left.confidence;
-      if (confidenceDifference !== 0) {
+  }
+  const confidenceDifference = right.confidence - left.confidence;
+  if (confidenceDifference !== 0) {
     return confidenceDifference;
-      }
-      const lengthDifference = right.end - right.start - (left.end - left.start);
-      if (lengthDifference !== 0) {
+  }
+  const lengthDifference = right.end - right.start - (left.end - left.start);
+  if (lengthDifference !== 0) {
     return lengthDifference;
-      }
-      if (left.start !== right.start) {
+  }
+  if (left.start !== right.start) {
     return left.start - right.start;
-      }
+  }
   return left.detectorId.localeCompare(right.detectorId);
 }
 
@@ -55,26 +62,34 @@ export function resolveFindingOverlaps(findings: readonly Finding[]): Finding[] 
         left.end - right.end ||
         left.detectorId.localeCompare(right.detectorId),
     );
-  const groups: Finding[][] = [];
+  const groups: Array<{
+    start: number;
+    end: number;
+    representative: Finding;
+  }> = [];
 
   for (const finding of ordered) {
     const current = groups.at(-1);
-    const currentEnd = current
-      ? Math.max(...current.map((item) => item.end))
-      : -1;
-    if (current && finding.start < currentEnd) {
-      current.push(finding);
+    if (current && finding.start < current.end) {
+      current.start = Math.min(current.start, finding.start);
+      current.end = Math.max(current.end, finding.end);
+      if (compareRank(finding, current.representative) < 0) {
+        current.representative = finding;
+      }
     } else {
-      groups.push([finding]);
+      groups.push({
+        start: finding.start,
+        end: finding.end,
+        representative: finding,
+      });
     }
   }
 
   return groups.map((group) => {
-    const representative = group.slice().sort(compareRank)[0];
     return {
-      ...representative,
-      start: Math.min(...group.map((finding) => finding.start)),
-      end: Math.max(...group.map((finding) => finding.end)),
+      ...group.representative,
+      start: group.start,
+      end: group.end,
     };
   });
 }

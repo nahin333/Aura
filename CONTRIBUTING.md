@@ -22,9 +22,10 @@ npm run build
 For browser smoke testing:
 
 ~~~bash
-npm run dev
+npm run build
+npm run preview
 # In another terminal:
-npm run test:e2e
+AURA_BASE_URL=http://127.0.0.1:4173 npm run test:e2e
 ~~~
 
 Override <code>FIREFOX_PATH</code>, <code>GECKODRIVER_PATH</code>, or <code>AURA_BASE_URL</code> when the defaults do not match your system.

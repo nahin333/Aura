@@ -22,7 +22,18 @@ export function redactText(
   let cursor = 0;
   for (const finding of acceptedFindings) {
     sanitizedText += text.slice(cursor, finding.start);
-    sanitizedText += replacement;
+    const findingReplacement = options.replacementForFinding?.({
+      category: finding.category,
+      severity: finding.severity,
+      detectorId: finding.detectorId,
+    });
+    if (
+      findingReplacement !== undefined &&
+      typeof findingReplacement !== "string"
+    ) {
+      throw new TypeError("replacementForFinding must return a string");
+    }
+    sanitizedText += findingReplacement ?? replacement;
     cursor = finding.end;
   }
   sanitizedText += text.slice(cursor);

@@ -1,6 +1,6 @@
 {
   "name": "aura-preflight",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A local-first pre-share privacy verifier for text and images.",
@@ -13,17 +13,23 @@
   "bugs": {
     "url": "https://github.com/nahin333/Aura/issues"
   },
-  "homepage": "https://github.com/nahin333/Aura#readme",
+  "homepage": "https://nahin333.github.io/Aura/",
   "keywords": [
     "privacy",
     "redaction",
     "metadata",
     "ocr",
-    "local-first"
+    "local-first",
+    "pwa",
+    "screenshot-redaction",
+    "secret-scanner",
+    "exif-removal",
+    "data-loss-prevention",
+    "privacy-tool"
   ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/generate-pwa-icons.mjs dist/icons && node scripts/build-pwa.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
