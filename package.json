@@ -51,7 +51,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
     "selenium-webdriver": "4.27.0",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vite": "6.4.3",
     "vite-plugin-static-copy": "2.3.2",
     "vitest": "3.2.6"
